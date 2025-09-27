@@ -6,8 +6,10 @@ This project ports the original `app.html` heat calculator into a Flask web appl
 - Flask app factory with blueprint routing and JSON endpoints (`/api/calculate`, `/api/sweep`).
 - Pure-Python port of the Ideal Logic Heat H calculations with symmetry between gas-in and heat-out lines.
 - UI served with Jinja templates and static assets; JavaScript keeps the live slider experience and talks to the Flask API.
-- Interactive efficiency chart (Chart.js) showing the Baldi et al. return-temperature curve, with the 56°C dew-point transition highlighted.
+- Interactive efficiency chart (Chart.js) showing the Baldi et al. return-temperature curve, with the 56ï¿½C dew-point transition highlighted.
 - Unit tests (pytest) covering the calculator logic, input normalisation, and sweep table generation.
+
+![Heatlytics screenshot](Screenshot_27-9-2025_14100_127.0.0.1.jpeg)
 
 ## Getting Started
 1. **Set up a virtual environment (recommended):**
