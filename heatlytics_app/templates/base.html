@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}Ideal Logic Heat H Calculator{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
+    {% block head_extra %}{% endblock %}
+  </head>
+  <body>
+    {% block body %}{% endblock %}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js" integrity="sha256-llOggT23Q7vngzKjiW4ox7x1RuT/9R5+l56QjR8EcdE=" crossorigin="anonymous" defer></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+    {% block body_extra %}{% endblock %}
+  </body>
+</html>

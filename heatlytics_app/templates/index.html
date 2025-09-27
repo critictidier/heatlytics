@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% set initial_basis_label = 'Gross (GCV)' if initial_state.inputs.basis == 'gross' else 'Net (NCV)' %}
+
+{% block body %}
+<div class="wrap">
+  <div class="titlebar">
+    <div>
+      <div class="pill"><span class="dot"></span><span>Condensing-aware</span></div>
+      <h1>Ideal Logic Heat H &ndash; Gas Input &amp; Heat Output</h1>
+    </div>
+    <div class="badge" id="basis_badge">{{ initial_basis_label }}</div>
+  </div>
+
+  <div class="grid">
+    <!-- Inputs -->
+    <div class="card inputs">
+      <div class="row">
+        <label for="model">Model</label>
+        <select id="model" name="model">
+          {% for option in initial_state.model_options %}
+            <option value="{{ option.value }}" {% if option.value == initial_state.inputs.model %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+        <div class="unit">-</div>
+      </div>
+
+      <div class="row">
+        <label for="ret">Return temperature (&deg;C)</label>
+        <input id="ret" type="range" min="20" max="80" step="0.1" value="{{ initial_state.inputs.return_temp }}">
+        <input id="ret_n" type="number" step="0.1" value="{{ initial_state.inputs.return_temp }}">
+      </div>
+
+      <div class="row">
+        <label for="dT">&Delta;T = Flow - Return (&deg;C)</label>
+        <input id="dT" type="range" min="2" max="30" step="0.1" value="{{ initial_state.inputs.delta_t }}">
+        <input id="dT_n" type="number" step="0.1" value="{{ initial_state.inputs.delta_t }}">
+      </div>
+
+      <div class="row">
+        <label for="flow">Flow temperature (&deg;C)</label>
+        <input id="flow" type="range" min="20" max="80" step="0.1" value="{{ initial_state.inputs.flow_temp }}">
+        <input id="flow_n" type="number" step="0.1" value="{{ initial_state.inputs.flow_temp }}">
+      </div>
+
+      <div class="row">
+        <label for="mod">Modulation (%)</label>
+        <input id="mod" type="range" min="0" max="100" step="0.1" value="{{ initial_state.inputs.modulation_pct }}">
+        <input id="mod_n" type="number" step="0.1" value="{{ initial_state.inputs.modulation_pct }}">
+      </div>
+
+      <div class="row">
+        <label>Gas input basis</label>
+        <div class="seg" id="basis_group">
+          {% for option in initial_state.basis_options %}
+            {% set is_checked = option.value == initial_state.inputs.basis %}
+            <input type="radio" id="basis_{{ option.value }}" name="basis" value="{{ option.value }}" {% if is_checked %}checked{% endif %}>
+            <label for="basis_{{ option.value }}">{{ option.label }}</label>
+          {% endfor %}
+        </div>
+        <div class="unit">-</div>
+      </div>
+
+      <div class="row">
+        <label id="cv_label" for="cv">Gross calorific value (MJ/m^3)</label>
+        <input id="cv" type="range" min="36" max="41" step="0.1" value="{{ initial_state.inputs.cv }}">
+        <input id="cv_n" type="number" step="0.1" value="{{ initial_state.inputs.cv }}">
+      </div>
+
+      <div class="row">
+        <label>Quick presets</label>
+        <div class="split">
+          <button type="button" id="preset_low">Low temp</button>
+          <button type="button" id="preset_med">Medium</button>
+          <button type="button" id="preset_high">High temp</button>
+        </div>
+        <div class="unit">-</div>
+      </div>
+
+      <div class="small">
+        <ul>
+          <li><b>Efficiency model:</b> return-temperature polynomial + load (Baldi <i>et&nbsp;al.</i>), calibrated to Ideal Table&nbsp;2 anchors at approximately 60&deg;C and 30&deg;C return.</li>
+          <li><b>Symmetry:</b> Heat-out is computed from gas-in lines; gas-in is computed from output lines. Both use shared &eta;(T<sub>r</sub>, L) surfaces.</li>
+          <li>Gas kW to m^3/h uses your selected basis and CV (defaults: 38.7&nbsp;MJ/m^3 GCV, 34.9&nbsp;MJ/m^3 NCV).</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Outputs -->
+    <div class="card outputs">
+      <div class="stat"><span>Mean water temp (&deg;C)</span><b id="mwt">-</b></div>
+      <div class="stat"><span>Return temp (&deg;C)</span><b id="ret_out">-</b></div>
+      <div class="stat"><span>Flow temp (&deg;C)</span><b id="flow_out">-</b></div>
+      <div class="stat"><span>Condensing mode</span><b><span class="badge" id="cond_mode">-</span></b></div>
+      <div class="stat"><span>Gas input basis</span><b><span class="badge" id="basis_badge_output">{{ initial_basis_label }}</span></b></div>
+      <hr>
+      <div class="stat"><span>Min heat output (kW)</span><b id="min_kW">-</b></div>
+      <div class="stat"><span>Max heat output (kW)</span><b id="max_kW">-</b></div>
+      <div class="stat"><span>Dynamic heat output (kW)</span><b id="dyn_kW">-</b></div>
+      <div class="stat"><span>Efficiency (% on selected basis)</span><b id="eff_pct">-</b></div>
+      <div class="stat"><span>Gas factor (input / heat-out)</span><b id="gas_factor">-</b></div>
+      <div class="stat"><span>Estimated gas input (kW)</span><b id="gas_kW">-</b></div>
+      <div class="stat"><span id="m3h_label">Estimated gas use (m^3/h @ GCV)</span><b id="m3h">-</b></div>
+
+      <table class="table" id="table">
+        <thead>
+          <tr><th>Mod (%)</th><th>Heat out (kW)</th><th>Eff. (%)</th><th>Factor</th><th>Gas in (kW)</th><th>m^3/h</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <div class="small">
+        Gas kW to m^3/h: <code>m^3/h = kW &times; 3.6 / CV</code> (CV is Gross or Net per your selection).
+      </div>
+    </div>
+
+    <!-- Efficiency chart -->
+    <div class="card chart-panel" id="efficiency_panel">
+      <div class="chart-card__top">
+        <div>
+          <div class="chart-card__title">Boiler efficiency vs. return temperature</div>
+          <div class="chart-card__subtitle small">Condensing gain accelerates once return water drops below the dew point (~56&nbsp;&deg;C), as characterised by Baldi <i>et&nbsp;al.</i> (2017).</div>
+        </div>
+        <button type="button" class="chart-card__fullscreen" id="chart_fullscreen_btn" aria-expanded="false" aria-controls="efficiency_chart">Full view</button>
+      </div>
+      <div class="chart-canvas-wrap">
+        <canvas id="efficiency_chart" aria-label="Boiler efficiency vs return water temperature" role="img"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block body_extra %}
+<script>
+  window.__INITIAL_STATE__ = {{ initial_state | tojson }};
+</script>
+{% endblock %}
