@@ -9,7 +9,7 @@ This project ports the original `app.html` heat calculator into a Flask web appl
 - Interactive efficiency chart (Chart.js) showing the Baldi et al. return-temperature curve, with the 56�C dew-point transition highlighted.
 - Unit tests (pytest) covering the calculator logic, input normalisation, and sweep table generation.
 
-![Heatlytics screenshot](Screenshot_27-9-2025_14100_127.0.0.1.jpeg)
+![Heatlytics screenshot](heatlytics_app/static/images/screenshot.jpeg)
 
 ## Getting Started
 1. **Set up a virtual environment (recommended):**
