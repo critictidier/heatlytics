@@ -2,6 +2,11 @@
 
 {% set initial_basis_label = 'Gross (GCV)' if initial_state.inputs.basis == 'gross' else 'Net (NCV)' %}
 
+{% set initial_coeffs = initial_state.coefficients or {} %}
+{% set initial_coeff_active = initial_coeffs.get('active') if initial_coeffs.get('active') in ['ch', 'dhw'] else 'ch' %}
+{% set initial_coeff_ch = initial_coeffs.get('ch', 1.0) %}
+{% set initial_coeff_dhw = initial_coeffs.get('dhw', 1.0) %}
+
 {% block body %}
 <div class="wrap">
   <div class="titlebar">
@@ -65,6 +70,33 @@
         <label id="cv_label" for="cv">Gross calorific value (MJ/m^3)</label>
         <input id="cv" type="range" min="36" max="41" step="0.1" value="{{ initial_state.inputs.cv }}">
         <input id="cv_n" type="number" step="0.1" value="{{ initial_state.inputs.cv }}">
+      </div>
+
+      <div class="row">
+        <label>Coefficient mode</label>
+        <div class="seg" id="coeff_mode_group">
+          <input type="radio" id="coeff_mode_ch" name="coeff_mode" value="ch" {% if initial_coeff_active == 'ch' %}checked{% endif %}>
+          <label for="coeff_mode_ch">CH</label>
+          <input type="radio" id="coeff_mode_dhw" name="coeff_mode" value="dhw" {% if initial_coeff_active == 'dhw' %}checked{% endif %}>
+          <label for="coeff_mode_dhw">DHW</label>
+        </div>
+        <div class="unit">-</div>
+      </div>
+
+      <div class="row">
+        <label for="coef_ch">CH coefficient</label>
+        <input id="coef_ch" type="range" min="0.5" max="1.5" step="0.01" value="{{ "%.2f"|format(initial_coeff_ch) }}" {% if initial_coeff_active != 'ch' %}disabled{% endif %}>
+        <input id="coef_ch_n" type="number" min="0.5" max="1.5" step="0.01" value="{{ "%.2f"|format(initial_coeff_ch) }}" {% if initial_coeff_active != 'ch' %}disabled{% endif %}>
+      </div>
+
+      <div class="row">
+        <label for="coef_dhw">DHW coefficient</label>
+        <input id="coef_dhw" type="range" min="0.5" max="1.5" step="0.01" value="{{ "%.2f"|format(initial_coeff_dhw) }}" {% if initial_coeff_active != 'dhw' %}disabled{% endif %}>
+        <input id="coef_dhw_n" type="number" min="0.5" max="1.5" step="0.01" value="{{ "%.2f"|format(initial_coeff_dhw) }}" {% if initial_coeff_active != 'dhw' %}disabled{% endif %}>
+      </div>
+
+      <div class="small">
+        These coefficients let you nudge the gas input to reflect real-world inefficiencies (flue and distribution losses, cycling, pump energy, etc.).
       </div>
 
       <div class="row">

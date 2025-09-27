@@ -39,6 +39,20 @@
 
   const initialState = window.__INITIAL_STATE__ || {};
 
+  const COEFFICIENT_MIN = 0.5;
+  const COEFFICIENT_MAX = 1.5;
+
+  const clampCoefficientValue = (value, fallback = 1) => {
+    const numeric = Number.parseFloat(value);
+    const fallbackNumeric = Number.parseFloat(fallback);
+    const base = Number.isFinite(numeric) ? numeric : (Number.isFinite(fallbackNumeric) ? fallbackNumeric : 1);
+    const clamped = Math.min(Math.max(base, COEFFICIENT_MIN), COEFFICIENT_MAX);
+    return Math.round(clamped * 100) / 100;
+  };
+
+  const initialCoefficients = initialState.coefficients || {};
+  const initialCoefficientActive = initialCoefficients.active === 'dhw' ? 'dhw' : 'ch';
+
   const fallbackCvRanges = {
     gross: { min: 36.0, max: 41.0, default: 38.7 },
     net: { min: 33.0, max: 37.0, default: 34.9 },
@@ -65,9 +79,17 @@
       modulation_pct: Number(initialState.inputs?.modulation_pct ?? 40.0),
       cv: Number(initialState.inputs?.cv ?? (cvRanges.gross?.default ?? 38.7)),
     },
-    outputs: initialState.outputs || null,
-    sweep: initialState.sweep || [],
+    rawOutputs: initialState.outputs || null,
+    rawSweep: Array.isArray(initialState.sweep) ? initialState.sweep : [],
+    outputs: null,
+    sweep: [],
+    rawEfficiencyCurve: defaultCurve,
     efficiencyCurve: defaultCurve,
+    coefficients: {
+      active: initialCoefficientActive,
+      ch: clampCoefficientValue(initialCoefficients.ch, 1),
+      dhw: clampCoefficientValue(initialCoefficients.dhw, 1),
+    },
   };
 
   const $ = (id) => document.getElementById(id);
@@ -106,6 +128,11 @@
     efficiencyCanvas: $('efficiency_chart'),
     chartPanel: $('efficiency_panel'),
     chartExpandButton: $('chart_fullscreen_btn'),
+    coeffModeRadios: Array.from(document.querySelectorAll('input[name="coeff_mode"]')),
+    coeffChRange: $('coef_ch'),
+    coeffChNumber: $('coef_ch_n'),
+    coeffDhwRange: $('coef_dhw'),
+    coeffDhwNumber: $('coef_dhw_n'),
   };
 
   const OUTPUT_DECIMALS = {
@@ -165,6 +192,65 @@
     rangeEl.value = text;
     numberEl.value = text;
     setPct(rangeEl);
+  };
+
+  const getActiveCoefficientKey = () => (appState.coefficients.active === 'dhw' ? 'dhw' : 'ch');
+
+  const getActiveCoefficient = () => {
+    const key = getActiveCoefficientKey();
+    const value = appState.coefficients[key];
+    return Number.isFinite(value) ? value : 1;
+  };
+
+  const applyCoefficientToOutputs = (outputs) => {
+    if (!outputs || typeof outputs !== 'object') return outputs;
+    const coefficient = getActiveCoefficient();
+    if (!Number.isFinite(coefficient) || coefficient === 0) return { ...outputs };
+    const adjusted = { ...outputs };
+    const inverse = 1 / coefficient;
+    if (Number.isFinite(outputs.gas_factor)) adjusted.gas_factor = outputs.gas_factor * coefficient;
+    if (Number.isFinite(outputs.gas_kW)) adjusted.gas_kW = outputs.gas_kW * coefficient;
+    if (Number.isFinite(outputs.m3h)) adjusted.m3h = outputs.m3h * coefficient;
+    if (Number.isFinite(outputs.efficiency_pct)) adjusted.efficiency_pct = outputs.efficiency_pct * inverse;
+    return adjusted;
+  };
+
+  const applyCoefficientToSweep = (rows) => {
+    if (!Array.isArray(rows)) return [];
+    const coefficient = getActiveCoefficient();
+    if (!Number.isFinite(coefficient) || coefficient === 0) {
+      return rows.map((row) => (row && typeof row === 'object' ? { ...row } : row));
+    }
+    const inverse = 1 / coefficient;
+    return rows.map((row) => {
+      if (!row || typeof row !== 'object') return row;
+      const adjusted = { ...row };
+      if (Number.isFinite(row.gas_factor)) adjusted.gas_factor = row.gas_factor * coefficient;
+      if (Number.isFinite(row.gas_kW)) adjusted.gas_kW = row.gas_kW * coefficient;
+      if (Number.isFinite(row.m3h)) adjusted.m3h = row.m3h * coefficient;
+      if (Number.isFinite(row.efficiency_pct)) adjusted.efficiency_pct = row.efficiency_pct * inverse;
+      return adjusted;
+    });
+  };
+
+  const applyCoefficientToCurve = (curve) => {
+    if (!curve || typeof curve !== 'object') return curve;
+    const sourcePoints = Array.isArray(curve.points) ? curve.points : [];
+    const coefficient = getActiveCoefficient();
+    if (!Number.isFinite(coefficient) || coefficient === 0) {
+      return { ...curve, points: sourcePoints.map((pt) => (pt && typeof pt === 'object' ? { ...pt } : pt)) };
+    }
+    const inverse = 1 / coefficient;
+    const points = sourcePoints.map((pt) => {
+      if (!pt || typeof pt !== 'object') return pt;
+      const adjusted = { ...pt };
+      const efficiency = Number(pt.efficiency_pct);
+      if (Number.isFinite(efficiency)) {
+        adjusted.efficiency_pct = efficiency * inverse;
+      }
+      return adjusted;
+    });
+    return { ...curve, points };
   };
 
   const curvesEqual = (a, b) => {
@@ -273,26 +359,30 @@
   const updateEfficiencyChart = (curve, options = {}) => {
     const { replaceCurve = false } = options;
     if (curve) {
-      if (replaceCurve || !appState.efficiencyCurve) {
-        appState.efficiencyCurve = curve;
+      if (replaceCurve || !appState.rawEfficiencyCurve) {
+        appState.rawEfficiencyCurve = { ...curve };
       } else {
-        appState.efficiencyCurve = {
-          ...appState.efficiencyCurve,
-          dew_point: curve.dew_point ?? appState.efficiencyCurve.dew_point,
+        appState.rawEfficiencyCurve = {
+          ...appState.rawEfficiencyCurve,
+          ...curve,
         };
       }
     }
-    const workingCurve = appState.efficiencyCurve || defaultCurve;
+
+    const workingRawCurve = appState.rawEfficiencyCurve || defaultCurve;
+    const scaledCurve = applyCoefficientToCurve(workingRawCurve);
+    appState.efficiencyCurve = scaledCurve;
+
     const chart = ensureEfficiencyChart();
     if (!chart) return;
 
-    const rawPoints = Array.isArray(workingCurve.points) ? workingCurve.points : [];
+    const rawPoints = Array.isArray(scaledCurve.points) ? scaledCurve.points : [];
     const points = rawPoints
       .map((pt) => ({ x: Number(pt?.return_temp), y: Number(pt?.efficiency_pct) }))
       .filter((pt) => Number.isFinite(pt.x) && Number.isFinite(pt.y))
       .sort((a, b) => a.x - b.x);
 
-    const dewPoint = Number(workingCurve.dew_point);
+    const dewPoint = Number(scaledCurve.dew_point);
     const currentReturn = Number(appState.inputs.return_temp);
     const highlightPoint = getInterpolatedPoint(rawPoints, currentReturn);
     const dewPointPoint = Number.isFinite(dewPoint) ? getInterpolatedPoint(rawPoints, dewPoint) : null;
@@ -365,47 +455,123 @@
     chart.update(replaceCurve ? undefined : 'none');
   };
 
+
   const updateBadges = (label) => {
     if (controls.basisBadge) controls.basisBadge.textContent = label;
     if (controls.basisBadgeOutput) controls.basisBadgeOutput.textContent = label;
   };
 
-  const updateOutputs = (outputs) => {
+  const updateOutputs = (outputs, { storeRaw = true } = {}) => {
     if (!outputs) return;
-    appState.outputs = outputs;
-    controls.mwt.textContent = formatNumber(outputs.mwt, OUTPUT_DECIMALS.mwt);
-    controls.retOut.textContent = formatNumber(outputs.return_temp, OUTPUT_DECIMALS.return_temp);
-    controls.flowOut.textContent = formatNumber(outputs.flow_temp, OUTPUT_DECIMALS.flow_temp);
-    controls.condMode.textContent = outputs.condensing_mode ?? '-';
-    updateBadges(outputs.basis_label ?? basisLabel(appState.inputs.basis));
-    controls.minKw.textContent = formatNumber(outputs.min_kW, OUTPUT_DECIMALS.min_kW);
-    controls.maxKw.textContent = formatNumber(outputs.max_kW, OUTPUT_DECIMALS.max_kW);
-    controls.dynKw.textContent = formatNumber(outputs.dyn_kW, OUTPUT_DECIMALS.dyn_kW);
-    controls.effPct.textContent = formatNumber(outputs.efficiency_pct, OUTPUT_DECIMALS.efficiency_pct);
-    controls.gasFactor.textContent = formatNumber(outputs.gas_factor, OUTPUT_DECIMALS.gas_factor);
-    controls.gasKw.textContent = formatNumber(outputs.gas_kW, OUTPUT_DECIMALS.gas_kW);
-    controls.m3h.textContent = formatNumber(outputs.m3h, OUTPUT_DECIMALS.m3h);
-    if (outputs.m3h_label) {
-      controls.m3hLabel.textContent = outputs.m3h_label;
+    if (storeRaw) appState.rawOutputs = outputs;
+    const adjusted = applyCoefficientToOutputs(outputs) || outputs;
+    appState.outputs = adjusted;
+    controls.mwt.textContent = formatNumber(adjusted.mwt, OUTPUT_DECIMALS.mwt);
+    controls.retOut.textContent = formatNumber(adjusted.return_temp, OUTPUT_DECIMALS.return_temp);
+    controls.flowOut.textContent = formatNumber(adjusted.flow_temp, OUTPUT_DECIMALS.flow_temp);
+    controls.condMode.textContent = adjusted.condensing_mode ?? '-';
+    updateBadges(adjusted.basis_label ?? basisLabel(appState.inputs.basis));
+    controls.minKw.textContent = formatNumber(adjusted.min_kW, OUTPUT_DECIMALS.min_kW);
+    controls.maxKw.textContent = formatNumber(adjusted.max_kW, OUTPUT_DECIMALS.max_kW);
+    controls.dynKw.textContent = formatNumber(adjusted.dyn_kW, OUTPUT_DECIMALS.dyn_kW);
+    controls.effPct.textContent = formatNumber(adjusted.efficiency_pct, OUTPUT_DECIMALS.efficiency_pct);
+    controls.gasFactor.textContent = formatNumber(adjusted.gas_factor, OUTPUT_DECIMALS.gas_factor);
+    controls.gasKw.textContent = formatNumber(adjusted.gas_kW, OUTPUT_DECIMALS.gas_kW);
+    controls.m3h.textContent = formatNumber(adjusted.m3h, OUTPUT_DECIMALS.m3h);
+    if (adjusted.m3h_label) {
+      controls.m3hLabel.textContent = adjusted.m3h_label;
     }
   };
 
-  const updateSweep = (items) => {
+  const updateSweep = (items, { storeRaw = true } = {}) => {
     if (!controls.tableBody) return;
+    const source = Array.isArray(items) ? items : [];
+    if (storeRaw) appState.rawSweep = source;
+    const adjustedRows = applyCoefficientToSweep(source);
     controls.tableBody.innerHTML = '';
-    (items || []).forEach((row) => {
+    adjustedRows.forEach((row) => {
       const tr = document.createElement('tr');
-      const modDisplay = formatNumber(row.modulation_pct ?? 0, 0);
+      const modDisplay = formatNumber(row?.modulation_pct ?? 0, 0);
       tr.innerHTML = `
         <td>${modDisplay}</td>
-        <td>${formatNumber(row.dyn_kW, SWEEP_DECIMALS.dyn_kW)}</td>
-        <td>${formatNumber(row.efficiency_pct, SWEEP_DECIMALS.efficiency_pct)}</td>
-        <td>${formatNumber(row.gas_factor, SWEEP_DECIMALS.gas_factor)}</td>
-        <td>${formatNumber(row.gas_kW, SWEEP_DECIMALS.gas_kW)}</td>
-        <td>${formatNumber(row.m3h, SWEEP_DECIMALS.m3h)}</td>`;
+        <td>${formatNumber(row?.dyn_kW, SWEEP_DECIMALS.dyn_kW)}</td>
+        <td>${formatNumber(row?.efficiency_pct, SWEEP_DECIMALS.efficiency_pct)}</td>
+        <td>${formatNumber(row?.gas_factor, SWEEP_DECIMALS.gas_factor)}</td>
+        <td>${formatNumber(row?.gas_kW, SWEEP_DECIMALS.gas_kW)}</td>
+        <td>${formatNumber(row?.m3h, SWEEP_DECIMALS.m3h)}</td>`;
       controls.tableBody.appendChild(tr);
     });
-    appState.sweep = items;
+    appState.sweep = adjustedRows;
+  };
+
+  const updateCoefficientControlState = () => {
+    const activeKey = getActiveCoefficientKey();
+    controls.coeffModeRadios?.forEach((radio) => {
+      if (!radio) return;
+      radio.checked = radio.value === activeKey;
+    });
+    const chDisabled = activeKey !== 'ch';
+    const dhwDisabled = activeKey !== 'dhw';
+    if (controls.coeffChRange) controls.coeffChRange.disabled = chDisabled;
+    if (controls.coeffChNumber) controls.coeffChNumber.disabled = chDisabled;
+    if (controls.coeffDhwRange) controls.coeffDhwRange.disabled = dhwDisabled;
+    if (controls.coeffDhwNumber) controls.coeffDhwNumber.disabled = dhwDisabled;
+    if (controls.coeffChRange) setPct(controls.coeffChRange);
+    if (controls.coeffDhwRange) setPct(controls.coeffDhwRange);
+  };
+
+  const syncCoefficientControls = () => {
+    if (controls.coeffChRange && controls.coeffChNumber) {
+      setPair(controls.coeffChRange, controls.coeffChNumber, appState.coefficients.ch, 2);
+    }
+    if (controls.coeffDhwRange && controls.coeffDhwNumber) {
+      setPair(controls.coeffDhwRange, controls.coeffDhwNumber, appState.coefficients.dhw, 2);
+    }
+    updateCoefficientControlState();
+  };
+
+  const refreshCoefficientOutputs = () => {
+    if (appState.rawOutputs) {
+      updateOutputs(appState.rawOutputs, { storeRaw: false });
+    }
+    if (Array.isArray(appState.rawSweep)) {
+      updateSweep(appState.rawSweep, { storeRaw: false });
+    }
+    updateEfficiencyChart(undefined);
+  };
+
+  const setActiveCoefficient = (mode) => {
+    if (mode !== 'ch' && mode !== 'dhw') return;
+    if (appState.coefficients.active === mode) return;
+    appState.coefficients.active = mode;
+    updateCoefficientControlState();
+    refreshCoefficientOutputs();
+  };
+
+  const applyCoefficientInput = (mode, value) => {
+    const next = clampCoefficientValue(value, appState.coefficients[mode]);
+    appState.coefficients[mode] = next;
+    const rangeEl = mode === 'dhw' ? controls.coeffDhwRange : controls.coeffChRange;
+    const numberEl = mode === 'dhw' ? controls.coeffDhwNumber : controls.coeffChNumber;
+    if (rangeEl && numberEl) {
+      setPair(rangeEl, numberEl, next, 2);
+    }
+    refreshCoefficientOutputs();
+  };
+
+  const attachCoefficientHandlers = (mode) => {
+    const rangeEl = mode === 'dhw' ? controls.coeffDhwRange : controls.coeffChRange;
+    const numberEl = mode === 'dhw' ? controls.coeffDhwNumber : controls.coeffChNumber;
+    if (!rangeEl || !numberEl) return;
+    setPct(rangeEl);
+    rangeEl.addEventListener('input', () => {
+      if (rangeEl.disabled) return;
+      applyCoefficientInput(mode, rangeEl.value);
+    });
+    numberEl.addEventListener('input', () => {
+      if (numberEl.disabled) return;
+      applyCoefficientInput(mode, numberEl.value);
+    });
   };
 
   const syncControlsFromState = () => {
@@ -455,10 +621,10 @@
         updateOutputs(data.outputs);
         updateSweep(data.sweep);
         if (data.efficiency_curve) {
-          const sameCurve = curvesEqual(appState.efficiencyCurve, data.efficiency_curve);
+          const sameCurve = curvesEqual(appState.rawEfficiencyCurve, data.efficiency_curve);
           updateEfficiencyChart(data.efficiency_curve, { replaceCurve: !sameCurve });
         } else {
-          updateEfficiencyChart(undefined, { replaceCurve: false });
+          updateEfficiencyChart(undefined);
         }
       })
       .catch((error) => {
@@ -664,6 +830,16 @@
     });
   });
 
+  controls.coeffModeRadios.forEach((radio) => {
+    radio.addEventListener('change', (event) => {
+      if (!event.target.checked) return;
+      setActiveCoefficient(event.target.value);
+    });
+  });
+
+  attachCoefficientHandlers('ch');
+  attachCoefficientHandlers('dhw');
+
   const applyPreset = (ret, delta, mod) => {
     setPair(controls.retRange, controls.retNumber, ret, 1);
     setPair(controls.dTRange, controls.dTNumber, delta, 1);
@@ -681,9 +857,9 @@
 
   setCVUIForBasis(appState.inputs.basis, { keepValue: true });
   syncControlsFromState();
+  syncCoefficientControls();
   updateBadges(basisLabel(appState.inputs.basis));
-  updateOutputs(appState.outputs);
-  updateSweep(appState.sweep);
-  updateEfficiencyChart(appState.efficiencyCurve, { replaceCurve: true });
+  refreshCoefficientOutputs();
+  updateEfficiencyChart(appState.rawEfficiencyCurve, { replaceCurve: true });
   setExpandedUI(false);
 })();
