@@ -3,6 +3,7 @@
 # Heatlytics – Condensing Boiler Gas & Heat Calculator (Ideal Logic Heat H series)
 
 **What it is**
+
 An interactive calculator and set of ready‑to‑use Home Assistant Jinja templates that estimate **fuel input (gas power)** and **water‑side heat output** for Ideal Logic *Heat H* boilers (H12/H15/H18/H24/H30).
 It models how efficiency rises sharply in condensing mode (low return temperatures) and flattens in non‑condensing mode, and it respects the manufacturer’s **min/max input and output** data.
 
