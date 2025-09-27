@@ -1,7 +1,3 @@
-Here’s a complete **`README.md`** you can drop into the project.
-
----
-
 # Heatlytics – Condensing Boiler Gas & Heat Calculator (Ideal Logic Heat H series)
 
 **What it is**
