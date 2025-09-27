@@ -29,6 +29,8 @@ It models how efficiency rises sharply in condensing mode (low return temperatur
 
 * **Gross vs Net CV.** The app lets you choose either basis. The Jinja sensors below are given **on a Net CV basis** (common for energy analysis). If you prefer Gross, swap to the Gross anchors and basis in the same framework.
 
+* **CH / DHW coefficient** In the calculator/templates this is a simple scalar you apply to the modelled fuel–to–heat relationship to reflect real-world losses (or gains) that the pure efficiency curve doesn’t capture. You keep two because space-heating (CH) and hot-water (DHW) typically run at different set-points and hydraulics: DHW usually drives higher flow/return temperatures (often near or above the flue-gas dew point ~56 °C), so the boiler spends more time out of condensing mode and suffers extra start/stop, purge and cylinder/pipe losses; CH often runs lower returns (more condensing) but still sees distribution and cycling penalties. Practically, the coefficients let you nudge the estimate so it matches metered gas: e.g., CH ≈ 1.00 around low-temp weather-compensation, while DHW may be > 1 to account for hotter, non-condensing operation and coil/pipe losses. They’re grounded in the manufacturer’s 40 °C vs 70 °C MWT anchors (showing higher efficiency at low MWT) and the research curve that is bimodal in return temperature (sharp drop above the dew point); the coefficients simply layer on site-specific inefficiencies so your live sensor aligns with reality.
+
 ---
 
 ## What the calculator shows
