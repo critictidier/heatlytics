@@ -1,3 +1,5 @@
+![Heatlytics app screenshot](heatlytics_app/static/images/screenshot.jpeg)
+
 # Heatlytics – Condensing Boiler Gas & Heat Calculator (Ideal Logic Heat H series)
 
 **What it is**
